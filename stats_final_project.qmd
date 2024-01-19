@@ -1,0 +1,337 @@
+---
+title: "Stats_5400_final_project"
+author: "Jayesh_Shubham"
+format: html
+editor: visual
+---
+
+## 
+
+loading the data
+
+```{r}
+df <- read.csv("C:/STAT 5405/Stats_final_project/fitness_class_2212.csv")
+
+```
+
+```{r}
+str(df)
+```
+
+Univariarte EDA and cleaning
+
+```{r}
+hist(df$months_as_member)
+```
+
+```{r}
+hist(df$weight)
+boxplot(df$weight)
+```
+
+```{r}
+table(df$day_before)
+```
+
+```{r}
+table(df$day_of_week)
+```
+
+```{r}
+# Function to combine categories for days of the week
+combine_days <- function(x) {
+  # Define a mapping of full day names to their abbreviations
+  day_map <- c("Monday" = "Mon", "Tuesday" = "Tue", "Wednesday" = "Wed", 
+               "Thursday" = "Thu", "Fri." = "Fri", "Saturday" = "Sat", 
+               "Sunday" = "Sun")
+
+  # Remove periods from abbreviations
+ # x <- gsub("\\.", "", x)
+
+  # If the day is a full name, replace it with the abbreviation
+  if (x %in% names(day_map)) {
+    return(day_map[x])
+  } else {
+    return(x)
+  }
+}
+
+# Apply the function to your column
+df$day_of_week <- sapply(df$day_of_week, combine_days)
+
+# Checking the modified data
+table(df$day_of_week)
+
+```
+
+```{r}
+table(df$time)
+```
+
+```{r}
+table(df$category)
+```
+
+```{r}
+df$category[df$category == '-'] <- 'Others'
+table(df$category)
+```
+
+```{r}
+table(df$attended)
+```
+
+Build a basic logit classifier and see how it performs. Check the train and test accuracy also.
+
+Once you get the stable model, try feature selection using the stepwise function.
+
+```{r}
+#df$attended <- as.factor(ifelse(df$attended=="yes",1,0))
+```
+
+```{r}
+df$day_of_week<- as.factor(df$day_of_week)
+df$time <- as.factor(df$time)
+df$category<- as.factor(df$category)
+str(df)
+```
+
+```{r}
+#col_class <- sapply(1:ncol(df), function(x) class(df[,x]))
+#col_id <- which(col_class == "character")
+#for(i in 1:length(col_id)){
+#  df[,col_id[i]] <- as.factor(df[,col_id[i]])
+#}#
+```
+
+```{r}
+str(df)
+```
+
+### **Logit Model Fitting**
+
+#### Training and Test Data
+
+```{r}
+set.seed(123457)
+train.prop <- 0.80
+strats <- df$attended
+rr <- split(1:length(strats), strats)
+idx <- sort(as.numeric(unlist(sapply(rr, 
+        function(x) sample(x, length(x)*train.prop)))))
+df.train <- df[idx, ]
+df.test <- df[-idx, ]
+```
+
+We can see whether the proportions of the two levels of the response ***y*** are the same in the train, test, and the entire data.
+
+#### Fitting the full binary logit model
+
+We use the *glm()* function to fit a binary regression with a logit link to the training data in *df.train*. The response is ***attended*** and the model includes all the predictors; we can call it the *full model*.
+
+```{r}
+full.logit <- glm(attended  ~ . ,data = df.train, 
+                  family = binomial(link = "logit"))
+summary(full.logit)
+```
+
+The output shows which coefficients are significant for explaining the incidence of ***yes*** to subscribing to a deposit.
+
+The output also shows the *null deviance* of 1450.5 on 1182 d.f and residual deviance 1081.4 on 1166 d.f.
+
+The larger the difference between the null deviance and residual deviance, better the model fit. The AIC is 1115.4.
+
+#### Fitting the null model
+
+The null model is a model with the intercept only, as shown below.
+
+```{r}
+null.logit <- glm(attended~1, data = df.train, 
+                  family = binomial(link = "logit"))
+summary(null.logit)
+```
+
+#### Variable selection
+
+The following steps show how we can use both backward and forward selection to choose predictors for explaining the response **attended**, using the option *direction ="both"* in the *step()* function.
+
+```{r}
+df <- na.omit(df)  # Where 'df' is your data frame
+df$weight[is.na(df$weight)] <- mean(df$weight, na.rm = TRUE)
+```
+
+```{r}
+null.logit <- glm(attended ~ 1, data = df, family = "binomial")
+full.logit <- glm(attended ~ ., data = df, family = "binomial")
+
+```
+
+```{r}
+both.logit <- step(null.logit, list(lower=formula(null.logit),
+                                    upper=formula(full.logit)),
+                   direction="both",trace=0, data = df.train)
+formula(both.logit)
+summary(both.logit)
+```
+
+The residual deviances from all three models are shown below
+
+```{r}
+null.logit$deviance
+```
+
+```{r}
+full.logit$deviance
+```
+
+```{r}
+both.logit$deviance
+```
+
+The full model is preferred for the training data set.
+
+#### Assess test data accuracy
+
+We assess how well the models full.logit and both.logit fit the response from the test data. Use the *predict()* function to predict the test data under both fitted models
+
+```{r}
+pred.both <- predict(both.logit, newdata = df.test, type="response")
+pred.full <- predict(full.logit, newdata = df.test, type="response")
+```
+
+We compute and compare the confusion matrices using the code below.
+
+```{r}
+(table.both <- table(pred.both > 0.5, df.test$attended))
+```
+
+```{r}
+(table.full <- table(pred.full > 0.5, df.test$attended))
+```
+
+We can then compute prediction accuracy for the test data as percentages.
+
+```{r}
+(accuracy.both <- round((sum(diag(table.both))/sum(table.both))*100,2)) 
+```
+
+```{r}
+(accuracy.full <- round((sum(diag(table.full))/sum(table.full))*100,2))
+```
+
+Both models have almost about the same accuracy for predicting the test data.
+
+```{r}
+library(pROC)
+```
+
+```{r}
+roc.both <- roc(df.test$attended, pred.both, levels=c(1,0))
+```
+
+```{r}
+auc(df.test$attended, pred.both)
+```
+
+We also get the AUC for "full.logit":
+
+```{r}
+roc.full <- roc(df.test$attended, pred.full, levels=c(1,0))
+```
+
+```{r}
+auc(df.test$attended, pred.full)
+```
+
+The area under the curve (AUC) is similar for the test data under the two model fits
+
+The *confusionMatrix()* function in the package *caret* is also useful for looking at several criteria for assessing the predictions, including the ones we showed above. We show the code below
+
+```{r}
+library(caret)
+```
+
+```{r}
+b <- ifelse(pred.both > 0.5,1,0)
+cm.both <- confusionMatrix(reference=as.factor(df.test$attended), 
+            data=as.factor(b), mode="everything")
+f <- ifelse(pred.full > 0.5,1,0)
+cm.full <- confusionMatrix(reference=as.factor(df.test$attended), 
+            data=as.factor(f), mode="everything")
+```
+
+#### Assess train data accuracy
+
+Using code similar to what we showed for the test data, we can also predict the train data and assess accuracy under both models
+
+```{r}
+## Predict train data using both.logit and full.logit
+pred.tr.both <- predict(both.logit, newdata = df.train, type="response")
+pred.tr.full <- predict(full.logit, newdata = df.train, type="response")
+# Accuracy of both.logit and full.logit
+# Confusion matrix
+(table.tr.both <- table(pred.tr.both > 0.5, df.train$attended))
+```
+
+```{r}
+(table.tr.full <- table(pred.tr.full > 0.5, df.train$attended))
+```
+
+```{r}
+# Accuracy
+(accuracy.tr.both <- round((sum(diag(table.tr.both))/sum(table.tr.both))*100,2)) 
+```
+
+```{r}
+(accuracy.tr.full <- round((sum(diag(table.tr.full))/sum(table.tr.full))*100,2))
+```
+
+```{r}
+# AUC 
+roc.tr.both <- roc(df.train$attended, pred.tr.both, levels=c(1,0))
+```
+
+```{r}
+auc(df.train$attended, pred.tr.both)
+```
+
+```{r}
+roc.tr.full <- roc(df.train$attended, pred.tr.full, levels=c(1,0))
+```
+
+```{r}
+auc(df.train$attended, pred.tr.full)
+```
+
+We see that the two models give similar performance.
+
+The accuracy on both.logit and full.logit are 78.07% and 78.02 respectively, and their respective AUC's are 0.8327 and 0.8382.
+
+#### Backward elimination for variable selection
+
+Instead of stepwise selection of predictors, the code for variable selection using only backward elimination is shown below.
+
+```{r}
+backwards <- step(full.logit, trace = 0)  #suppress details of each iteration
+# backwards <- step(full.logit)  # to show all details
+formula(backwards)
+```
+
+```{r}
+summary(backwards)
+```
+
+#### Forward selection
+
+The code for variable selection using only forward selection is shown below.
+
+```{r}
+forwards = step(null.logit, trace=0,
+      scope=list(lower=formula(null.logit),
+                 upper=formula(full.logit)), direction="forward")
+formula(forwards)
+```
+
+```{r}
+summary(forwards)
+```
